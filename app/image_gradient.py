@@ -1,12 +1,17 @@
+# William Collins
+# Methods to compute image pixel gradients the the AM loss.
+# Code from https://medium.com/analytics-vidhya/deep-dream-visualizing-the-features-learnt-by-convolutional-networks-in-pytorch-b7296ae3b7f
+
 import numpy as np
 
 import torch
 from torch import nn
 
 
-# class to compute image gradients in pytorch
 class RGBgradients(nn.Module):
+    '''Calculates the pixel gradients of an image using Scharr filters.'''
     def __init__(self): 
+        '''Initialize the filters'''
         super().__init__()
         # Scharr Filters
         # for e.g. see https://docs.opencv.org/2.4/doc/tutorials/imgproc/imgtrans/sobel_derivatives/sobel_derivatives.html#formulation
@@ -59,6 +64,7 @@ class RGBgradients(nn.Module):
                                                   weight2x, weight2y,
                                                   weight3x, weight3y])).type(torch.FloatTensor)
         
+        #assign the weights to the conv layer
         if self.conv.weight.shape == weight_final.shape:
             self.conv.weight = nn.Parameter(weight_final)
             self.conv.weight.requires_grad_(False)
@@ -67,6 +73,7 @@ class RGBgradients(nn.Module):
             
     
     def forward(self, x):
+        '''Calculate the activation'''
         return self.conv(x) 
     
     

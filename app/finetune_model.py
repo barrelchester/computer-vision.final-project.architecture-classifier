@@ -14,11 +14,27 @@ import matplotlib.pyplot as plt
 
 
 
-def finetune_model(model, optimizer, tensor_path, model_path, lab2idx, device, batch_size=32, n_epochs=20):
+def finetune_model(model, tensor_path, model_path, lab2idx, device, batch_size=32, n_epochs=20):
     '''Train the model on the new dataset. Use cross validation accuracy to checkpoint the model at improvements.
     Training data is in a directory containing stored tensors of 2000 images each. Use two of these files as test
     and cross validation. Shuffle the order of the files each epoch. '''
     model.train()
+    
+    optimizer = optim.AdamW([
+        {'params': model.fc.parameters(), 'lr': 1e-3},
+        {'params': model.Mixed_7c.parameters(), 'lr': 1e-4},
+        {'params': model.Mixed_7b.parameters(), 'lr': 1e-4},
+        {'params': model.Mixed_7a.parameters(), 'lr': 1e-4},
+        {'params': model.Mixed_6e.parameters(), 'lr': 1e-4},
+        {'params': model.Mixed_6d.parameters(), 'lr': 1e-5},
+        {'params': model.Mixed_6c.parameters(), 'lr': 1e-5},
+        {'params': model.Mixed_6b.parameters(), 'lr': 1e-5},
+        {'params': model.Mixed_6a.parameters(), 'lr': 1e-5},
+        {'params': model.Mixed_5d.parameters(), 'lr': 1e-6},
+        {'params': model.Mixed_5c.parameters(), 'lr': 1e-6},
+        {'params': model.Mixed_5b.parameters(), 'lr': 1e-6}
+    ], lr=1e-8)
+    
     criterion = nn.CrossEntropyLoss()
     scheduler = ReduceLROnPlateau(optimizer, 'min', patience=10)
     train_losses = []

@@ -170,38 +170,53 @@ def maximize_activation_with_scaling(model, gradLayer, activation, layer_name, u
     
 def maximize_activation_octaves(model, gradLayer, activation, layer_name, unit_idx=-1, im_size=(256,256), 
                                  num_octaves=4, octave_scale=1.4, optim_steps=20, optim_lr=0.4, act_wt=0.75,
-                               model_name='inception'):
+                                model_name='inception'):
+    '''Maximize the activation of a chosen neuron in a chosen layer having a forward_hook to store
+    the activation in the activation dict. 
+    
+    Penalize the negative RMS of the activation value, the penalize pixel intensity 
+    and sharp gradients.
+    
+    Creates octaves to shrink the image and extract high frequency components for smoother gradient updates.'''
     # the neuron to visualize
     model.eval()
     
+    #create a random noise image
     img_tensor = utils.random_image(im_size[0], im_size[1])
+    
+    #convert it for calculating the octaves
     img = utils.image_converter(img_tensor)
     print('original im size ', img.shape)
     
-    #img is shrunk
+    #get octaves and the resulting shrunk image
     img, octaves = get_octaves(img, num_octaves, octave_scale)
+    
+    #convert back to a tensor
     img_tensor = utils.normalize(torch.from_numpy(img.astype(np.float32).transpose(2,0,1))).to(device).requires_grad_(True)
     print('img size after octaves: ', img_tensor.size())
     print('octaves', [o.shape for o in octaves])   
     
-    # generate details octave by octave
+    # process octave by octave
     for i in range(octave_n):
         print('octave %d, im size %s' % (i, str(img_tensor.size())))
         if i>0:
-            hi = octaves[-i] #smallest first
+            #smallest octave is pulled first
+            hi = octaves[-i] 
             
-            #grow the image, add hi back in
+            #grow the image, add high frequency back in
             img = utils.image_converter(img_tensor)
-            print('resizing image ', img.shape)
-            img = cv2.resize(img, dsize=(hi.shape[:2])) + hi #*0.5
-            img = cv2.blur(img, (5,5))
-            print('to ', img.shape)
+            img = cv2.resize(img, dsize=(hi.shape[:2])) + hi 
+            
+            #blur slightly
+            img = cv2.blur(img, (3,3))
+            
+            #convert back to tensor
             img_tensor = utils.normalize(torch.from_numpy(img.astype(np.float32).transpose(2,0,1))).to(device).requires_grad_(True)
         
-        optimizer = optim.Adam([img_tensor], lr=1.0-(i*0.2)) #optim_lr)
-        #print('lr', (0.5-(i*0.1)))
+        #decay the LR as the image gets bigger so it isn't overrun with textures
+        optimizer = optim.Adam([img_tensor], lr=1.0-(i*0.2)) 
         
-        #get grad for current size image
+        #decay the number of optimizer steps as well
         for opt_epoch in range(optim_steps - (i*25)):
             optimizer.zero_grad()
             
@@ -211,10 +226,12 @@ def maximize_activation_octaves(model, gradLayer, activation, layer_name, unit_i
             #the activation output of the hooked layer that we want to maximize
             layer_out = activation[layer_name]
             
+            #calculate the root mean square of the activation of the selected neuron
             if unit_idx < 0:
                 rms = torch.pow((layer_out[0, :]**2).mean(), 0.5)
             else:
                 rms = torch.pow((layer_out[0, unit_idx]**2).mean(), 0.5)
+                
             # terminate if rms is nan
             if torch.isnan(rms):
                 print('Error: rms was Nan; Terminating ...')
@@ -222,6 +239,7 @@ def maximize_activation_octaves(model, gradLayer, activation, layer_name, unit_i
 
             # pixel intensity
             pxl_inty = torch.pow((img_tensor**2).mean(), 0.5)
+            
             # terminate if pxl_inty is nan
             if torch.isnan(pxl_inty):
                 print('Error: Pixel Intensity was Nan; Terminating ...')
@@ -230,25 +248,32 @@ def maximize_activation_octaves(model, gradLayer, activation, layer_name, unit_i
             # image gradients-compute gradient loss of an image using the above defined gradLayer
             gradSq = gradLayer(img_tensor.unsqueeze(0))**2
             im_grd = torch.pow(gradSq.mean(), 0.5)
+            
             # terminate is im_grd is nan
             if torch.isnan(im_grd):
                 print('Error: image gradients were Nan; Terminating ...')
                 sys.exit()
 
-            loss = -act_wt*rms + pxl_inty + im_grd        
+            loss = -act_wt*rms + pxl_inty + im_grd    
+            
             # print activation at the beginning of each mag_epoch
             if opt_epoch % 5 == 0:
                 print('begin opt_epoch {}, activation: {}'.format(opt_epoch, rms))
+                
             loss.backward()
             optimizer.step()
         
+        #convert for display
         img = utils.image_converter(img_tensor)
+        
+        #display and save the image
         plt.imshow(img)
         plt.savefig('%s_%s_%d.png' % (model_name, layer_name, unit_idx), bbox_inches='tight')
         plt.show()
 
 
 def get_octaves(img, num_octaves=4, octave_scale=1.4):
+    '''Create octaves for the image and return shrunk image and extracted high frequencies.'''
     octaves = []
     for i in range(num_octaves-1):
         h,w,c = img.shape
